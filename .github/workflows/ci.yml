@@ -1,20 +1,56 @@
-# =========================================================
-# САМОСТОЯТЕЛЬНАЯ РАБОТА
-# =========================================================
-#
-# Разработайте CI-пайплайн согласно разделу 5.4.1.
-#
-# Необходимо самостоятельно настроить:
-# 1. запуск при push в main;
-# 2. запуск при Pull Request в main;
-# 3. Ubuntu;
-# 4. checkout исходного кода;
-# 5. установку Python с кэшированием;
-# 6. установку зависимостей;
-# 7. lint;
-# 8. тесты с покрытием / Quality Gate;
-# 9. build;
-# 10. при желании — сохранение отчёта покрытия.
-#
-# Готовый workflow здесь намеренно не приводится.
-# =========================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: flake8 app tests
+
+      # Порог покрытия (--cov-fail-under=80) задан в setup.cfg:
+      # при покрытии ниже 80% pytest вернёт ненулевой код и job упадёт.
+      - name: Test with coverage
+        run: pytest
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+            coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build
+        run: python -m py_compile app/*.py run.py
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: ignore
